@@ -55,7 +55,7 @@ process FQ2BAM {
 process MUTECTCALLER {
   label 'gpu'
   container params.pb_container
-  publishDir "${params.outdir}/vcf", mode: 'copy', pattern: '*.unfiltered.vcf.gz*'
+  publishDir "${params.outdir}/vcf_raw", mode: 'copy', pattern: '*.unfiltered.vcf.gz*'
 
   input:
     val pon_vcf
@@ -143,7 +143,7 @@ process LEARN_ORIENT {
 process FILTER_M2 {
   label 'cpu'
   container params.gatk_container
-  publishDir "${params.outdir}/vcf", mode: 'copy', pattern: '*.filtered.vcf.gz*'
+  publishDir "${params.outdir}/vcf_filtered", mode: 'copy', pattern: '*.filtered.vcf.gz*'
 
   input:
     tuple val(sample), path(artifacts), path(vcf_in), path(vcf_tbi), path(stats), path(contam)
@@ -165,7 +165,7 @@ process FILTER_M2 {
 process SELECT_PASS {
   label 'cpu'
   container params.gatk_container
-  publishDir "${params.outdir}/vcf", mode: 'copy', pattern: '*.pass.vcf.gz*'
+  publishDir "${params.outdir}/vcf_PASS", mode: 'copy', pattern: '*.pass.vcf.gz*'
 
   input:
     tuple val(sample), path(filtered), path(filtered_tbi)
@@ -185,40 +185,26 @@ process SELECT_PASS {
 
 process COPY_REF_TO_CRAM_DIR {
   label 'cpu'
-  container params.gatk_container       // has gatk; may also have samtools. Adjust if needed.
+  container params.gatk_container
   publishDir "${params.outdir}/cram", mode: 'copy', overwrite: true
 
   input:
-    path ref_fa from ref_ch            // the reference FASTA you already use
-    val  _     from fq2_done_ch        // run only after all CRAMs are produced
+    // remove `from ref_ch` / `from fq2_done_ch`
+    path ref_fa
+    val  _
 
   output:
-    // nothing needs to be wired; files are published to the CRAM dir
+    path "${ref_fa.getFileName()}"
 
   script:
   """
-  # Work with staged copy names
+  set -euo pipefail
   base=\$(basename "${ref_fa}")
-  stem="\${base%.*}"
+  tmp=".nf_tmp_\$base"
 
-  # Copy the reference itself
-  cp "${ref_fa}" "\${base}"
+  # Make a *new* file first, then replace the staged input path
+  ln -f "${ref_fa}" "\$tmp" 2>/dev/null || cp -a --reflink=auto "${ref_fa}" "\$tmp"
 
-  # Copy or build .fai
-  if [ -f "${ref_fa}.fai" ]; then
-    cp "${ref_fa}.fai" "\${base}.fai"
-  elif command -v samtools >/dev/null 2>&1; then
-    samtools faidx "\${base}" || true
-  fi
-
-  # Copy or build .dict (useful for GATK/Picard)
-  if [ -f "${stem}.dict" ]; then
-    cp "${stem}.dict" "\${stem}.dict"
-  elif command -v gatk >/dev/null 2>&1; then
-    gatk CreateSequenceDictionary -R "\${base}" -O "\${stem}.dict" || true
-  elif command -v picard >/dev/null 2>&1; then
-    picard CreateSequenceDictionary R="\${base}" O="\${stem}.dict" || true
-  fi
   """
 }
 
@@ -261,4 +247,5 @@ workflow {
   emit:
     passv
 }
+
 
