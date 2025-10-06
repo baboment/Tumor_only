@@ -1,0 +1,23 @@
+# Nextflow runtime
+work/
+.nextflow*
+.cache/
+reports/
+timeline.html
+trace.txt
+
+# Outputs
+results/
+**/*.out
+**/*.err
+**/*.log
+
+# Private configs & secrets
+conf/local.config
+.env
+
+# OS/editor cruft
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
