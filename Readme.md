@@ -2,8 +2,6 @@
 
 This repository runs **tumor‑only somatic variant calling** using NVIDIA **Parabricks** (GPU‑accelerated) and **GATK** helper tools. It aligns FASTQs → CRAM with `pbrun fq2bam`, then calls variants with `pbrun mutectcaller`, and finally applies **GetPileupSummaries → CalculateContamination → LearnReadOrientationModel → FilterMutectCalls → SelectVariants** to produce a *PASS‑only* VCF.
 
-> This README is based on the uploaded files (`main.nf`, `nextflow.config`, `mutact.sh`, `sample_2.csv`). It corrects earlier misunderstandings (e.g., **tumor‑only** input; **CSV** not TSV; optional **PON** and **exome BED**).
-
 ---
 
 ## Pipeline at a glance
@@ -122,3 +120,4 @@ nextflow run . -profile slurm -resume \
 ## License
 
 Add a license (MIT/Apache‑2.0) to clarify reuse.
+
