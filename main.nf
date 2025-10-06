@@ -96,6 +96,7 @@ process GET_PILEUPS {
   def intArg = params.exome_bed ? "-L ${params.exome_bed}" : ''
   """
   gatk GetPileupSummaries \
+    -R ${params.ref} \
     -I ${cram} \
     -V ${params.gnomad_af} \
     ${intArg} \
@@ -260,3 +261,4 @@ workflow {
   emit:
     passv
 }
+
