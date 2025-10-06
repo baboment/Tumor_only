@@ -105,8 +105,6 @@ nextflow run . -profile slurm -resume \
   --rg_lb sureselect_v8 --rg_pl ILLUMINA
 ```
 
-> In your original script the path to `main.nf` and the samplesheet are **absolute**. For a public repo, prefer **relative paths** (as above) and move cluster specifics into a **private config**.
-
 ---
 
 ## Reproducibility notes
@@ -119,5 +117,13 @@ nextflow run . -profile slurm -resume \
 
 ## License
 
-Add a license (MIT/Apache‑2.0) to clarify reuse.
+This repository’s code is released under the **MIT License** — see the [LICENSE](./LICENSE) file for details.
+
+**Third-party software & data**
+- This repo does **not** distribute NVIDIA Parabricks or GATK. You must obtain and use them under their respective licenses/EULAs.
+- Reference genomes, known sites (dbSNP, Mills, gnomAD), and BED files are **not** included. Ensure you have permission to use and redistribute any data you reference.
+
+**Usage note**
+- The MIT license applies only to the code and configuration in this repository. It does **not** grant any rights to proprietary containers, binaries, or datasets referenced in example commands.
+
 
