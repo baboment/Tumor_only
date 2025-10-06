@@ -85,7 +85,7 @@ process MUTECTCALLER {
 process GET_PILEUPS {
   label 'cpu'
   container params.gatk_container
-
+  publishDir "${params.outdir}/vcf_filtered", mode: 'copy', pattern: '*.pileups.table*'
   input:
     tuple val(sample), path(cram), path(crai), path(recal)
 
@@ -107,7 +107,7 @@ process GET_PILEUPS {
 process CALC_CONTAM {
   label 'cpu'
   container params.gatk_container
-
+  publishDir "${params.outdir}/vcf_filtered", mode: 'copy', pattern: '*.contamination.table*'
   input:
     tuple val(sample), path(pile)
 
@@ -125,7 +125,7 @@ process CALC_CONTAM {
 process LEARN_ORIENT {
   label 'cpu'
   container params.gatk_container
-
+  publishDir "${params.outdir}/vcf_filtered", mode: 'copy', pattern: '*.artifacts.tar.gz*'
   input:
     tuple val(sample), path(vcf_in), path(vcf_tbi), path(f1r2), path(stats)
 
@@ -247,5 +247,6 @@ workflow {
   emit:
     passv
 }
+
 
 
