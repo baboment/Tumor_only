@@ -19,9 +19,7 @@ export NXF_SINGULARITY_CMD=apptainer
 nextflow run main.nf \
   -profile slurm \
   -resume \
-  --samplesheet /project/o240001_SBUFF67/script_zam/Tumor_only/sample_2.csv \
-  --outdir /project/o240001_SBUFF67/ALL_FF67/normal/tumor_only \
-  --skip_trimming true \
-  --num_gpus 2 \
-  --rg_lb sureselect_v8 \
-  --rg_pl ILLUMINA
+  --samplesheet sample_cram_copy.csv \
+  --account o250038 \
+  --outdir /project/o240001_SBUFF67/ALL_FF68/exome/rerun_cram_2 \
+  --num_gpus 1

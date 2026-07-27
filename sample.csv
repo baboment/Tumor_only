@@ -1,0 +1,9 @@
+sample,r1,r2
+S1-DA-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S1-DA-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S1-DA-01_2.fastq.gz
+S1-RL-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S1-RL-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S1-RL-01_2.fastq.gz
+S1-RM-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S1-RM-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S1-RM-01_2.fastq.gz
+S2-DA-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S2-DA-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S2-DA-01_2.fastq.gz
+S2-RL-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S2-RL-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S2-RL-01_2.fastq.gz
+S3-DA-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S3-DA-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S3-DA-01_2.fastq.gz
+S3-RL-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S3-RL-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S3-RL-01_2.fastq.gz
+S3-RM-01,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S3-RM-01_1.fastq.gz,/project/o240001_SBUFF67/ALL_FF68/exome/raw_fastq/S3-RM-01_2.fastq.gz
