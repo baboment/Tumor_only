@@ -204,6 +204,53 @@ def parseSamplesheetRow(row, int rowNumber, Set seenSamples) {
   }
 }
 
+
+// Optional tumour-normal pairing.
+// The samplesheet may carry `normal`, `normal_index` and `normal_name` columns
+// alongside a cram/bam row. Rows without them keep the original tumour-only
+// behaviour, which is what patient S2 needs (no remission sample was collected).
+def readNormalMap(String samplesheetPath) {
+  def map = [:]
+  def f = file(samplesheetPath)
+  if (!f.exists()) return map
+  def lines = f.readLines().findAll { it?.trim() }
+  if (lines.size() < 2) return map
+  def hdr = lines[0].split(',', -1).collect { it.trim() }
+  def iS = hdr.indexOf('sample')
+  def iN = hdr.indexOf('normal')
+  def iI = hdr.indexOf('normal_index')
+  def iM = hdr.indexOf('normal_name')
+  if (iS < 0 || iN < 0) return map
+  lines.drop(1).eachWithIndex { line, idx ->
+    def fld = line.split(',', -1).collect { it.trim() }
+    if (fld.size() <= iN) return
+    def sample = fld[iS]
+    def normal = fld[iN]
+    if (!sample || !normal) return
+    if (!file(normal).exists()) {
+      exit 1, "Samplesheet row ${idx + 2}: normal for '${sample}' does not exist: ${normal}"
+    }
+    def nidx = (iI >= 0 && fld.size() > iI && fld[iI]) ? fld[iI] : null
+    if (!nidx) {
+      nidx = ['.crai', '.bai'].collect { normal + it }.find { file(it).exists() }
+      if (!nidx) {
+        def stem = normal.replaceAll(/\.(cram|bam)$/, '')
+        nidx = ['.crai', '.bai'].collect { stem + it }.find { file(it).exists() }
+      }
+    }
+    if (!nidx || !file(nidx).exists()) {
+      exit 1, "Samplesheet row ${idx + 2}: could not find an index for the normal of '${sample}': ${normal}"
+    }
+    def nname = (iM >= 0 && fld.size() > iM && fld[iM]) ? fld[iM] : null
+    if (!nname) {
+      // --normal-name must match the SM tag in the normal's read groups.
+      nname = file(normal).getName().replaceAll(/\.(bqsr|markdup)?\.?(cram|bam)$/, '')
+    }
+    map[sample] = [file(normal), file(nidx), nname]
+  }
+  return map
+}
+
 // QC PROCESSES
 process RAW_FASTQC {
   label 'cpu_low'
@@ -546,6 +593,48 @@ process MUTECTCALLER {
     ${extraArgs}
   """
 }
+
+process MUTECTCALLER_PAIRED {
+  // Tumour-normal Mutect2. Identical to MUTECTCALLER except for the normal.
+  //
+  // Why this exists: called tumour-only, these exomes came back 54-72% germline
+  // (variants shared with the patient's own remission marrow), with a single VAF
+  // spike at 40-60%. Population frequency cannot filter private germline
+  // variants. Only a matched normal can.
+  label 'gpu'
+  container params.pb_container
+  publishDir "${params.outdir}/vcf_raw", mode: 'copy', pattern: '*.unfiltered.vcf.gz*'
+
+  input:
+    val pon_vcf
+    tuple val(sample), path(bqsr_cram), path(bqsr_crai), path(normal_bam), path(normal_idx), val(normal_name)
+
+  output:
+    tuple val(sample), path("${sample}.unfiltered.vcf.gz"), path("${sample}.unfiltered.vcf.gz.tbi"), path("${sample}.f1r2.tar.gz"), path("${sample}.unfiltered.vcf.gz.stats")
+
+  script:
+  def intArg = params.exome_bed ? "--interval-file ${params.exome_bed}" : ''
+  def ponArg = (pon_vcf && pon_vcf != '') ? "--pon ${pon_vcf}" : ''
+  def extraArgs = params.mutect_extra_args ?: ''
+  def sensitivityArgs = resolvedMutectLowLod ? '--initial-tumor-lod 1.0 --tumor-lod-to-emit 1.0' : ''
+  """
+  pbrun mutectcaller \
+    --num-gpus ${params.num_gpus} \
+    --ref ${params.ref} \
+    --tumor-name ${sample} \
+    --in-tumor-bam ${bqsr_cram} \
+    --normal-name ${normal_name} \
+    --in-normal-bam ${normal_bam} \
+    --mutect-germline-resource ${params.mutect_germline_resource} \
+    --out-vcf ${sample}.unfiltered.vcf.gz \
+    --mutect-f1r2-tar-gz ${sample}.f1r2.tar.gz \
+    ${intArg} \
+    ${ponArg} \
+    ${sensitivityArgs} \
+    ${extraArgs}
+  """
+}
+
 
 process GET_PILEUPS {
   label 'cpu_low'
@@ -1106,7 +1195,19 @@ workflow {
   target_cov_out = TARGET_COVERAGE_METRICS(final_cram_ch)
   
   // Callers
-  m2  = MUTECTCALLER(mutect_pon_vcf_ch, final_cram_ch)
+  // Split on whether the samplesheet gave this tumour a matched normal.
+  normalMap = readNormalMap(params.samplesheet)
+  if (normalMap) {
+    log.info "Paired tumour-normal calling for: ${normalMap.keySet().sort().join(', ')}"
+  }
+
+  paired_cram_ch = final_cram_ch
+    .filter { normalMap.containsKey(it[0]) }
+    .map { s, c, i -> tuple(s, c, i, normalMap[s][0], normalMap[s][1], normalMap[s][2]) }
+  unpaired_cram_ch = final_cram_ch.filter { !normalMap.containsKey(it[0]) }
+
+  m2 = MUTECTCALLER(mutect_pon_vcf_ch, unpaired_cram_ch)
+    .mix( MUTECTCALLER_PAIRED(mutect_pon_vcf_ch, paired_cram_ch) )
   ds  = DEEPSOMATIC(final_cram_ch)
   ct  = CLAIRS_TO(final_cram_ch)
 
