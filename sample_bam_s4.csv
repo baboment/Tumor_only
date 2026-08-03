@@ -1,0 +1,4 @@
+sample,bam,bai
+S4-DA-01,/project/o240001_SBUFF67/ALL_FF68/exome/bam_S4/bqsr/S4-DA-01.bqsr.bam,/project/o240001_SBUFF67/ALL_FF68/exome/bam_S4/bqsr/S4-DA-01.bqsr.bam.bai
+S4-RL-01,/project/o240001_SBUFF67/ALL_FF68/exome/bam_S4/bqsr/S4-RL-01.bqsr.bam,/project/o240001_SBUFF67/ALL_FF68/exome/bam_S4/bqsr/S4-RL-01.bqsr.bam.bai
+S4-RM-01,/project/o240001_SBUFF67/ALL_FF68/exome/bam_S4/bqsr/S4-RM-01.bqsr.bam,/project/o240001_SBUFF67/ALL_FF68/exome/bam_S4/bqsr/S4-RM-01.bqsr.bam.bai

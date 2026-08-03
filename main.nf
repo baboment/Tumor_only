@@ -1287,3 +1287,57 @@ workflow {
     review_tsv = review_tables
     concordant_vcf = concord.concordant
 }
+
+// ============================================================================
+// Completion guard.
+//
+// WHY THIS EXISTS. On 2026-07-29 this pipeline was invoked without `-profile slurm`.
+// Nextflow fell back to the local executor, submitted ZERO tasks, and printed
+//     WorkflowStats[succeededCount=0; failedCount=0; cachedCount=0; submittedCount=0]
+//     Execution complete -- Goodbye
+// with exit status 0. `work/` was empty. Nothing distinguished that from a successful
+// run, and `somatic_nf` accumulated 37 FAILED / 0 COMPLETED over three months without
+// anyone noticing the runs were no-ops.
+//
+// A pipeline that silently does nothing must not report success.
+// ============================================================================
+workflow.onComplete {
+    def st        = workflow.stats
+    def succeeded = st?.succeededCount ?: 0
+    def cached    = st?.cachedCount    ?: 0
+    def failed    = st?.failedCount    ?: 0
+    def executed  = succeeded + cached
+
+    log.info "Task summary: succeeded=${succeeded} cached=${cached} failed=${failed} " +
+             "executor=${workflow.profile ?: "(none)"} duration=${workflow.duration}"
+
+    if( executed == 0 ) {
+        log.error """
+        ========================================================================
+        NO TASKS WERE EXECUTED - treating this run as a FAILURE.
+
+        Nextflow completed without running or reusing a single task, which almost
+        always means one of:
+
+          * `-profile slurm` was omitted, so the local executor was used and
+            nothing was submitted   <- this is what happened on 2026-07-29
+          * the samplesheet matched no rows for any entry point (fastq/cram/vcf)
+          * every channel was empty because input paths do not resolve
+
+        Re-run as, for example:
+          SLURM_ACCOUNT=o250039 nextflow run main.nf -profile slurm -resume \
+            --samplesheet <sheet.csv> --outdir <dir>
+
+        profile      : ${workflow.profile ?: "(none - local executor)"}
+        samplesheet  : ${params.samplesheet}
+        outdir       : ${params.outdir}
+        ========================================================================
+        """.stripIndent()
+        // Nextflow cannot change its exit status from onComplete, so force it.
+        // Reports and the trace have already been written by this point.
+        System.exit(1)
+    }
+
+    if( failed > 0 )
+        log.warn "${failed} task(s) failed - inspect .nextflow.log and the work dirs."
+}

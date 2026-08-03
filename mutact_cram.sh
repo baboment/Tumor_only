@@ -20,6 +20,6 @@ nextflow run main.nf \
   -profile slurm \
   -resume \
   --samplesheet sample_cram_copy.csv \
-  --account o250038 \
+  --slurm_account o250039 \
   --outdir /project/o240001_SBUFF67/ALL_FF68/exome/rerun_cram_2 \
   --num_gpus 1

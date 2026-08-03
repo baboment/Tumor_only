@@ -19,6 +19,7 @@ export NXF_SINGULARITY_CMD=apptainer
 nextflow run main.nf \
   -profile slurm \
   -resume \
+  --slurm_account o250039 \
   --samplesheet /project/o240001_SBUFF67/script_zam/Tumor_only/sample_2.csv \
   --outdir /project/o240001_SBUFF67/ALL_FF67/normal/tumor_only \
   --skip_trimming true \
