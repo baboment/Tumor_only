@@ -6,6 +6,9 @@ params.outdir      = 'results'
 
 // References come from env, nextflow.config, params files, or local config.
 // Keep Mutect resources aligned to Broad hg38/assembly38, not GRCh38.p14.
+// For b37/hg19 inputs use `-profile hg19`, which sets genome_build='b37' along
+// with every reference path below. See conf/hg19.config.
+params.genome_build              = System.getenv('GENOME_BUILD')                 ?: 'hg38'
 params.ref                       = System.getenv('REF_FA')                       ?: null
 params.mills                     = System.getenv('MILLS_VCF')                    ?: null
 params.dbsnp                     = System.getenv('DBSNP_VCF')                    ?: null
@@ -113,14 +116,36 @@ if (resolvedMergeMinCallers < 1 || resolvedMergeMinCallers > 3) {
   exit 1, "--merge_min_callers must be between 1 and 3 for the three-caller comparison; got ${resolvedMergeMinCallers}"
 }
 
-def clairsCustomPonFiles = [
-  params.clairs_to_gnomad,
-  params.clairs_to_dbsnp,
-  params.clairs_to_pon,
-  params.clairs_to_colorsdb,
+// DeepSomatic falls back to --use_default_pon_filtering=true whenever pon_vcf
+// is blank, and that built-in PoN is GRCh38-only. On b37 it matches no contig,
+// so it would filter nothing while still reporting success.
+if (params.genome_build == 'b37' && isBlank(params.pon_vcf)) {
+  exit 1, "genome_build=b37 requires a b37 --pon_vcf: DeepSomatic's built-in PoN is GRCh38-only. Run scripts/fetch_somatic_b37.sh, or use -profile hg19 which sets it."
+}
+
+// ClairS-TO panel of normals. Each entry pairs a resource with its own
+// --panel_of_normals_require_allele_matching flag, so the two comma lists
+// handed to ClairS-TO stay index-aligned when entries drop out.
+//
+// The list is deliberately variable length. The four PoNs ClairS-TO ships are
+// GRCh38; only three have a b37 counterpart, because CoLoRSdb would need a
+// genuine liftover rather than a contig rename. Requiring all four here meant
+// one blank entry silently discarded the whole --panel_of_normals argument and
+// fell back to the container's built-in GRCh38 defaults - which match no b37
+// contig and therefore filter nothing.
+def clairsPonCandidates = [
+  [params.clairs_to_gnomad,   'True' ],
+  [params.clairs_to_dbsnp,    'True' ],
+  [params.clairs_to_pon,      'False'],
+  [params.clairs_to_colorsdb, 'False'],
 ]
-if (clairsCustomPonFiles.any { !isBlank(it) } && !clairsCustomPonFiles.every { pathExists(it) }) {
-  log.warn("ClairS-TO custom PoN resources are incomplete or missing; the workflow will omit --panel_of_normals and use ClairS-TO defaults.")
+def clairsPonMissing = clairsPonCandidates.findAll { !isBlank(it[0]) && !pathExists(it[0]) }
+if (clairsPonMissing) {
+  log.warn("ClairS-TO PoN resources are configured but missing on disk and will be omitted: ${clairsPonMissing.collect { it[0] }.join(', ')}")
+}
+def clairsPonResolved = clairsPonCandidates.findAll { pathExists(it[0]) }
+if (!clairsPonResolved) {
+  log.warn("No ClairS-TO PoN resource resolved; --panel_of_normals will be omitted and ClairS-TO will use its built-in GRCh38 defaults.")
 }
 
 def samplesheetValue(row, String name) {
@@ -875,8 +900,11 @@ process CLAIRS_TO {
   def clairsBind = params.apptainer_bind_args ?: ''
   def extraArgs = params.clairs_to_extra_args ?: ''
   def thresholdArgs = "--snv_min_af ${resolvedClairsToSnvMinAf} --indel_min_af ${resolvedClairsToIndelMinAf} --min_coverage ${resolvedClairsToMinCoverage}"
-  def useCustomPon = [params.clairs_to_gnomad, params.clairs_to_dbsnp, params.clairs_to_pon, params.clairs_to_colorsdb].every { pathExists(it) }
-  def ponArg = useCustomPon ? "--panel_of_normals \"${params.clairs_to_gnomad},${params.clairs_to_dbsnp},${params.clairs_to_pon},${params.clairs_to_colorsdb}\" --panel_of_normals_require_allele_matching \"True,True,False,False\"" : ''
+  // clairsPonResolved keeps each resource next to its allele-matching flag, so
+  // dropping an entry (b37 has no CoLoRSdb) shortens both lists together.
+  def ponArg = clairsPonResolved
+    ? "--panel_of_normals \"${clairsPonResolved.collect { it[0] }.join(',')}\" --panel_of_normals_require_allele_matching \"${clairsPonResolved.collect { it[1] }.join(',')}\""
+    : ''
   """
   set -euo pipefail
   set +u

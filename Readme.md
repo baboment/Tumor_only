@@ -290,12 +290,61 @@ variable:
 | Target BED | `EXOME_BED` | `.../S33266436_Padded.chr.clean.bed` |
 | Kraken2 DB | `KRAKEN_DB` | `/common/db/microbiome_ref/kraken2_DB/PlusPF` |
 
-ClairS-TO additionally uses four population/PON VCFs (`CLAIRS_TO_GNOMAD`, `CLAIRS_TO_DBSNP`,
-`CLAIRS_TO_PON`, `CLAIRS_TO_COLORSDB`). **All four must exist** or the pipeline logs a warning and
-falls back to ClairS-TO's built-in defaults — it will not run with a partial set.
+ClairS-TO additionally uses up to four population/PON VCFs (`CLAIRS_TO_GNOMAD`, `CLAIRS_TO_DBSNP`,
+`CLAIRS_TO_PON`, `CLAIRS_TO_COLORSDB`). `--panel_of_normals` is assembled from whichever of them
+are set **and** present on disk, with each file's `--panel_of_normals_require_allele_matching`
+flag carried alongside it, so a partial set is supported — b37 runs with three, because CoLoRSdb
+exists only as GRCh38. Leaving one blank is a deliberate configuration; pointing one at a path
+that does not exist logs a warning and drops that entry. Only when *nothing* resolves does the
+pipeline fall back to ClairS-TO's built-in (GRCh38) defaults.
 
 Keep one consistent build across FASTA, known sites, PON, germline AF, target BED and annotation
 databases. Mutect resources in particular must match Broad hg38/assembly38, not GRCh38.p14.
+
+### hg19 / b37
+
+For samples aligned to the Broad b37 bundle (`Homo_sapiens_assembly19.fasta`, contigs
+`1..22,X,Y,MT` with no `chr` prefix), add the `hg19` profile:
+
+```bash
+nextflow run main.nf -profile slurm,hg19 -resume \
+  --slurm_account <account> --samplesheet <sheet.csv> --outdir <dir>
+```
+
+`conf/hg19.config` replaces every path in the table above and sets `genome_build = 'b37'` plus
+`snpeff_db = 'GRCh37.75'`. Three prerequisites, once per cluster, in this order:
+
+```bash
+sbatch scripts/fetch_somatic_b37.sh   # b37 Mutect2 + ClairS-TO resources -> /common/db/human_ref/hg19/somatic_b37
+sbatch scripts/prepon_b37.sh          # Parabricks .pon sidecar for the b37 PON (needs a GPU)
+./scripts/prepare_bed_b37.sh          # Agilent hg19 capture BEDs -> b37 naming
+```
+
+`prepon_b37.sh` is easy to forget and fails late. `pbrun mutectcaller --pon x.vcf.gz` does not
+read the VCF directly — it needs a sidecar `x.vcf.gz.pon` built by `pbrun prepon`, and aborts
+with `<pon>.pon not found. Make sure you run prepon first` after the workflow has already
+started. The hg38 PONs under `somatic_hg38/` have theirs; any new PON needs one built.
+
+Things that differ from hg38 and will bite if ignored:
+
+- **The profile overrides the env vars.** Profile params are applied *after* the `REF_FA`,
+  `DBSNP_VCF`, `MUTECT_PON_VCF` … statements in `nextflow.config`, so setting those alongside
+  `-profile hg19` has no effect. Edit `conf/hg19.config` instead.
+- **`snpeff_db` must be `GRCh37.75`, not `hg19`.** `GRCh37.75` is Ensembl-named (`1,2,…,MT`) and
+  matches b37 VCFs. The other hg19-era database installed here, `hg19kg`, is UCSC `chr`-prefixed
+  and annotates nothing — silently, with exit 0. Check with
+  `bcftools view -H <out>.snpeff.vcf.gz | grep -c 'ANN='`.
+- **`pon_vcf` must stay set.** DeepSomatic falls back to `--use_default_pon_filtering=true` when
+  it is blank, and that built-in PoN is GRCh38-only. `main.nf` refuses to start if
+  `genome_build == 'b37'` and `pon_vcf` is empty.
+- **ClairS-TO has no GRCh37 model**; it is run with the b37 PoNs above and its GRCh38-trained
+  model. Its call set is the least validated of the three on this build — check the per-sample
+  `caller_characteristics.tsv` before trusting it.
+- Capture intervals for the SureSelect V7 (S31285117) design land in
+  `/project/o250038_ALL_MET/S31285117_hg19/b37/` — target 35.80 Mb, bait 49.48 Mb.
+
+`mutact_hg19_trio.sh` is a ready-made `sbatch` wrapper for the SP39/SP40/SP41 trio
+(`sample_trio_b37.csv`), run as three independent tumour-only samples.
 
 ### Apptainer binds
 
