@@ -116,6 +116,18 @@ if (resolvedMergeMinCallers < 1 || resolvedMergeMinCallers > 3) {
   exit 1, "--merge_min_callers must be between 1 and 3 for the three-caller comparison; got ${resolvedMergeMinCallers}"
 }
 
+// Whether a caller must be its own FILTER==PASS to cast a vote. Defaults to true.
+//
+// It has to default on because with it off the concordance numbers describe germline
+// agreement, not somatic concordance: harmonize_filter_vcf.py gates on AF/DP/ALT-reads
+// and never reads FILTER, so GERMLINE/NonSomatic/RefCall/NoCall/PON records reach the
+// merge. For S1-DA-01 that put 42,187 germline records into a 57,436-record
+// "concordant" file and made support_2 (48,598) exceed support_1 (39,468).
+// Set --merge_require_pass false only to reproduce a pre-2026-08 run.
+def resolvedMergeRequirePass = (params.merge_require_pass == null
+                                 ? true
+                                 : params.merge_require_pass.toString().toBoolean())
+
 // DeepSomatic falls back to --use_default_pon_filtering=true whenever pon_vcf
 // is blank, and that built-in PoN is GRCh38-only. On b37 it matches no contig,
 // so it would filter nothing while still reporting success.
@@ -1008,6 +1020,7 @@ process CONCORDANCE_MERGE {
   ${params.python_bin} ${projectDir}/scripts/merge_caller_support.py \
     --sample ${sample} \
     --min-callers ${resolvedMergeMinCallers} \
+    ${resolvedMergeRequirePass ? '--require-pass' : ''} \
     --candidate-dir isec_out \
     --output-vcf ${sample}.concordant.vcf \
     --support-tsv ${sample}.caller_support.tsv \
@@ -1151,6 +1164,41 @@ workflow {
 
   if( !file(params.samplesheet).exists() )
     exit 1, "Samplesheet not found: ${params.samplesheet}"
+
+  // Capture territory must be stated whenever variants are actually called.
+  //
+  // params.exome_bed no longer has a silent default (see nextflow.config). Every caller
+  // treats a null bed as "no --interval-file", i.e. call unrestricted, which succeeds
+  // quietly and yields counts comparable with nothing. Failing here is the point: the
+  // 2026-08-03 S4 run inherited a changed default, was called over 1.77x less territory
+  // than S1/S2/S3, and gave no error and no warning.
+  //
+  // Checked synchronously in the workflow body, NOT inside the input channel's flatMap:
+  // an operator closure is not evaluated under -preview, so a guard placed there is dead
+  // code exactly when someone is dry-running to check their command line.
+  //
+  // VCF-mode rows start from existing calls and legitimately need no bed, so the mode
+  // test mirrors parseSamplesheetRow: only m2_vcf/ds_vcf/ct_vcf select 'vcf'.
+  def bedlessCallingRows = file(params.samplesheet)
+    .splitCsv(header:true, sep:',')
+    .any { row ->
+      !(samplesheetValue(row, 'm2_vcf')
+        || samplesheetValue(row, 'ds_vcf')
+        || samplesheetValue(row, 'ct_vcf'))
+    }
+  if( !params.exome_bed && bedlessCallingRows )
+    exit 1, """Missing required --exome_bed (or EXOME_BED).
+
+  Capture territory is a per-cohort fact with no safe default: without it the callers
+  run unrestricted, which silently changes every count and every concordance number.
+
+  For the ALL_FF68 cohort (all 11 samples, S1-S4) use the legacy padded bed:
+    --exome_bed /project/o240001_SBUFF67/ALL_FF68/exome/capture_bed/padded_legacy.chr.clean.bed
+    --exome_bait_bed /project/o240001_SBUFF67/ALL_FF68/exome/capture_bed/bait.norm.bed
+
+  The true V8 target (capture_bed/target.norm.bed, 35.13 Mb) is NOT interchangeable with
+  it -- 1.77x less territory. Pick one and keep it for the whole cohort.
+  -profile hg19 sets both beds itself and needs neither flag."""
 
   input_ch = Channel
     .fromPath(params.samplesheet)

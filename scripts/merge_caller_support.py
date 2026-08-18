@@ -15,6 +15,19 @@ CALLER_PREFIX = {
 }
 
 
+# Which FILTER values let a caller cast a vote under --require-pass.
+#
+# A per-caller set rather than a bare `== "PASS"` test, because the three callers use
+# different FILTER vocabularies (Mutect2: germline/weak_evidence/strand_bias/...,
+# DeepSomatic: GERMLINE/RefCall/NoCall/PON, ClairS-TO: NonSomatic/LowQual/...), and a
+# future caller may have a second label that legitimately counts as somatic-PASS.
+CALLER_PASS = {
+    "mutect2": {"PASS"},
+    "deepsomatic": {"PASS"},
+    "clairsto": {"PASS"},
+}
+
+
 EVIDENCE_SUFFIXES = ("FILTER", "QUAL", "AF", "DP", "AD")
 
 
@@ -220,6 +233,33 @@ def build_index(records):
     for record in records:
         by_key.setdefault(record.key, OrderedDict())[record.caller] = record
     return by_key
+
+
+def somatic_index(by_key):
+    """Drop non-PASS caller records so only somatic-PASS callers can vote.
+
+    Why this is needed: harmonize_filter_vcf.py gates on AF / ALT-read-count / DP and
+    never reads the FILTER column, so GERMLINE, NonSomatic, RefCall, NoCall and PON
+    records arrive here untouched. Germline SNPs sit at AF~0.5 with high depth, clear
+    every threshold, and DeepSomatic and ClairS-TO each emit them independently. The
+    result was a concordance table reporting support_2 (48,598) ABOVE support_1
+    (39,468) for S1-DA-01 -- impossible for a real 2-caller intersection -- because
+    that one caller pair contributed 43,193 germline sites. 42,187 of the 57,436
+    "concordant" records for that sample were FILTER=GERMLINE against 2,369 PASS.
+
+    Returns an index of the same shape as build_index(), so every helper below works
+    on it unchanged. Sites left with no supporting caller are dropped entirely: they
+    are not "support_0", they are simply not somatic candidates.
+    """
+    gated = OrderedDict()
+    for key, callers in by_key.items():
+        keep = OrderedDict()
+        for caller, record in callers.items():
+            if record.filt in CALLER_PASS.get(caller, {"PASS"}):
+                keep[caller] = record
+        if keep:
+            gated[key] = keep
+    return gated
 
 
 def load_candidate_keys(candidate_dir):
@@ -499,6 +539,14 @@ def main():
     parser.add_argument("--concordance-summary-tsv")
     parser.add_argument("--pairwise-concordance-tsv")
     parser.add_argument("--candidate-dir", help="Optional bcftools isec output directory used to gate concordant calls.")
+    # Defaults to OFF at the script level on purpose: a run already in flight generated
+    # its CONCORDANCE_MERGE command line from an older main.nf that does not pass this
+    # flag, and must keep behaving exactly as before. main.nf sets the pipeline-level
+    # default to true, so new runs are gated. See somatic_index() for why.
+    parser.add_argument("--require-pass", action="store_true",
+                        help="Only let a caller vote when its own FILTER is PASS. "
+                             "Without this, germline sites dominate the concordance "
+                             "counts and support_2 can exceed support_1.")
     parser.add_argument("--caller", action="append", required=True, help="caller_id:path.vcf.gz")
     args = parser.parse_args()
 
@@ -521,6 +569,16 @@ def main():
 
     header_meta, chrom_header, contig_order = merge_headers(vcf_parts, args.sample)
     by_key = build_index(all_records)
+
+    # Everything downstream -- the vote, the union file, the characteristics table, the
+    # concordance summary and the pairwise table -- must run off the same index, or the
+    # tables stop describing the VCFs beside them. That mismatch is precisely what made
+    # the published summaries unusable.
+    if args.require_pass:
+        by_key = somatic_index(by_key)
+        header_meta = list(header_meta) + [
+            "##somatic_gate=caller_native_FILTER==PASS",
+        ]
 
     concordant = support_records(by_key, args.min_callers, caller_order)
     candidate_keys = load_candidate_keys(args.candidate_dir)
